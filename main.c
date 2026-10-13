@@ -2,10 +2,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
 int main() {
+    int status = 0;
     while (1) {
         printf("klawshell> ");
         fflush(stdout);
@@ -48,7 +50,7 @@ int main() {
             break;
         } else if (strcmp(argv[0], "cd") == 0) {
             if (argv[1] != NULL) {
-                int status = chdir(argv[1]);
+                status = chdir(argv[1]);
                 if (status == -1) {
                     perror("cd");
                 }
@@ -57,7 +59,7 @@ int main() {
                 if (home == NULL) {
                     perror("cd");
                 } else {
-                    int status = chdir(home);
+                    status = chdir(home);
                     if (status == -1) {
                         perror("cd");
                     }
@@ -78,6 +80,39 @@ int main() {
             perror("fork failed");
             return 1;
         } else if (pid == 0) {
+            int idx = -1;
+            for (int i = 0; argv[i] != NULL; i++) {
+                if (strcmp(argv[i], ">") == 0 || strcmp(argv[i], ">>") == 0) {
+                    idx = i;
+                    break;
+                }
+            }
+            if (idx != -1) {
+                if (argv[idx+1] == NULL) {
+                    printf("file directory absent\n");
+                    _exit(1);
+                }
+                int slot = -1;
+                if (strcmp(argv[idx], ">") == 0) {
+                    slot = open(argv[idx+1], O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                } else {
+                    slot = open(argv[idx+1], O_WRONLY | O_CREAT | O_APPEND, 0644);
+                }
+                if (slot == -1) {
+                    perror("open failed");
+                    _exit(1);
+                }
+                if (dup2(slot, 1) == -1) {
+                    perror("dup2 failed");
+                    close(slot);
+                    _exit(1);
+                }
+                close(slot);
+                argv[idx] = NULL;
+                execvp(argv[0], argv);
+                perror("execvp failed");
+                _exit(127);
+            }
             execvp(argv[0], argv);
             perror("execvp failed");
             _exit(127);                          // Why is this better than just exit(1);
