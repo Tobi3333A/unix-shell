@@ -28,11 +28,6 @@ int main() {
             line[length - 1] = '\0';
         }
 
-        if (strcmp(line, "exit") == 0) {
-            free(line);
-            break;
-        }
-
         char *argv[64];
         char *pointer = strtok(line, " \t");
         int n= 0;
@@ -48,6 +43,34 @@ int main() {
             continue;
         }
 
+        if (strcmp(argv[0], "exit") == 0) {
+            free(line);
+            break;
+        } else if (strcmp(argv[0], "cd") == 0) {
+            if (argv[1] != NULL) {
+                int status = chdir(argv[1]);
+                if (status == -1) {
+                    perror("cd");
+                }
+            } else {
+                char *home = getenv("HOME");
+                if (home == NULL) {
+                    perror("cd");
+                } else {
+                    int status = chdir(home);
+                    if (status == -1) {
+                        perror("cd");
+                    }
+                }
+            }
+            free(line);
+            continue;
+        } else if (strcmp(argv[0], "help") == 0) {
+            printf("cd\npwd\nls\nexit\n");
+            free(line);
+            continue;
+        }
+
         pid_t pid = fork();
 
         if (pid < 0) {
@@ -57,11 +80,10 @@ int main() {
         } else if (pid == 0) {
             execvp(argv[0], argv);
             perror("execvp failed");
-            __exit(127);                          // Why is this better than just exit(1);
+            _exit(127);                          // Why is this better than just exit(1);
         } else {
             waitpid(pid, NULL, 0);
         }
-        
 
         free(line);
     }
