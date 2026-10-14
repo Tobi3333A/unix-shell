@@ -73,13 +73,27 @@ int main() {
             continue;
         }
 
-        pid_t pid = fork();
+        int pipefd[2];
+        if (pipe(pipefd) == -1) {
+            perror("pipe failed");
+            continue;
+        }
 
-        if (pid < 0) {
+        int pipeidx = -1;
+        for (int i = 0; argv[i] != NULL; i++) {
+            if (strcmp(argv[i], "|") == 0) {
+                pipeidx = i;
+                break;
+            }
+        }
+
+        pid_t pid1 = fork();
+
+        if (pid1 < 0) {
             free(line);
             perror("fork failed");
             return 1;
-        } else if (pid == 0) {
+        } else if (pid1 == 0) {
             int idx = -1;
             for (int i = 0; argv[i] != NULL; i++) {
                 if (strcmp(argv[i], ">") == 0 || strcmp(argv[i], ">>") == 0) {
@@ -108,16 +122,65 @@ int main() {
                     _exit(1);
                 }
                 close(slot);
+                close(pipefd[0]);
+                close(pipefd[1]);
                 argv[idx] = NULL;
                 execvp(argv[0], argv);
                 perror("execvp failed");
                 _exit(127);
             }
+
+            if (pipeidx != -1) {
+                close(pipefd[0]);
+                if (argv[pipeidx+1] == NULL) {
+                    printf("second command absent\n");
+                    _exit(1);
+                }
+                if (dup2(pipefd[1], 1) == -1) {
+                    perror("dup2 failed");
+                    _exit(1);
+                }
+                close(pipefd[1]);
+                argv[pipeidx] = NULL;
+                execvp(argv[0], argv);
+                perror("execvp failed");
+                _exit(127);
+            }
+
+            close(pipefd[0]);
+            close(pipefd[1]);
             execvp(argv[0], argv);
             perror("execvp failed");
-            _exit(127);                          // Why is this better than just exit(1);
-        } else {
-            waitpid(pid, NULL, 0);
+            _exit(127);
+        }
+
+        pid_t pid2 = fork();
+
+        if (pipeidx != -1) {
+            if (pid2 == -1) {
+                perror("fork failed");
+                _exit(1);
+            } else if (pid2 == 0) {
+                close(pipefd[1]);
+                if (dup2(pipefd[0], 0) == -1) {
+                    perror("dup2 failed");
+                    _exit(1);
+                }
+                close(pipefd[0]);
+
+                char **newArgv = argv + pipeidx + 1;
+
+                execvp(newArgv[0], newArgv);
+                perror("execvp failed");
+                _exit(127);
+            }
+        }
+
+        if (pid1 > 0) {
+            close(pipefd[0]);
+            close(pipefd[1]);
+            waitpid(pid1, NULL, 0);
+            waitpid(pid2, NULL, 0);
         }
 
         free(line);
