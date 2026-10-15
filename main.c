@@ -37,7 +37,7 @@ int main() {
         int too_many_args = 0;
         argv[n] = pointer;
         while (pointer != NULL) {
-            if (n > 63) {
+            if (n >= 63) {
                 too_many_args = 1;
                 break;
             }
@@ -163,10 +163,60 @@ int main() {
                 argv[idx] = NULL;
                 execvp(argv[0], argv);
                 perror("execvp failed");
+                if (pipeidx != -1) {
+                    close(pipefd[0]);
+                    close(pipefd[1]);
+                }
                 _exit(127);
             }
 
-            if (pipeidx > 0) {
+            int in_idx = -1;
+            for (int i = 0; argv[i] != NULL; i++) {
+                if (strcmp(argv[i], "<") == 0) {
+                    in_idx = i;
+                    break;
+                }
+            }
+
+            if (in_idx != -1) {
+                if (argv[in_idx+1] == NULL) {
+                    printf("put input file\n");
+                    if (pipeidx != -1) {
+                        close(pipefd[0]);
+                        close(pipefd[1]);
+                    }
+                    _exit(1);
+                }
+                int slot = open(argv[in_idx+1], O_RDONLY);
+                if (slot == -1) {
+                    perror("open failed");
+                    if (pipeidx != -1) {
+                        close(pipefd[0]);
+                        close(pipefd[1]);
+                    }
+                    _exit(1);
+                }
+                if (dup2(slot,0) == -1) {
+                    perror("dup2 failed");
+                    if (pipeidx != -1) {
+                        close(pipefd[0]);
+                        close(pipefd[1]);
+                    }
+                    _exit(1);
+                }
+                argv[in_idx] = NULL;
+                close(slot);
+                
+                execvp(argv[0], argv);
+                perror("execvp failed");
+                if (pipeidx != -1) {
+                    close(pipefd[0]);
+                    close(pipefd[1]);
+                }
+                _exit(127);
+            }
+
+            if (pipeidx != -1) {
                 close(pipefd[0]);
                 if (argv[pipeidx+1] == NULL) {
                     printf("second command absent\n");
@@ -184,11 +234,7 @@ int main() {
                 perror("execvp failed");
                 _exit(127);
             }
-
-            if (pipeidx != -1) {
-                close(pipefd[0]);
-                close(pipefd[1]);
-            }
+            
             execvp(argv[0], argv);
             perror("execvp failed");
             _exit(127);
