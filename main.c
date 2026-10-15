@@ -31,6 +31,13 @@ int main() {
         }
 
         char *argv[64];
+
+        // if (length > 64) {
+        //     printf("command is too long\n");
+        //     free(line);
+        //     continue;
+        // }
+
         char *pointer = strtok(line, " \t");
         int n= 0;
         argv[n] = pointer;
@@ -73,12 +80,6 @@ int main() {
             continue;
         }
 
-        int pipefd[2];
-        if (pipe(pipefd) == -1) {
-            perror("pipe failed");
-            continue;
-        }
-
         int pipeidx = -1;
         for (int i = 0; argv[i] != NULL; i++) {
             if (strcmp(argv[i], "|") == 0) {
@@ -87,11 +88,31 @@ int main() {
             }
         }
 
+        if (pipeidx == 0) {
+            printf("| cannot be your first command\n");
+            free(line);
+            continue;
+        }
+
+        int pipefd[2];
+        if (pipeidx != -1) {
+            if (pipe(pipefd) == -1) {
+                perror("pipe failed");
+                free(line);
+                continue;
+            }
+        }       
+
         pid_t pid1 = fork();
+        pid_t pid2 = -1;
 
         if (pid1 < 0) {
             free(line);
             perror("fork failed");
+            if (pipeidx != -1) {
+                close(pipefd[0]);
+                close(pipefd[1]);
+            }
             return 1;
         } else if (pid1 == 0) {
             int idx = -1;
@@ -104,6 +125,10 @@ int main() {
             if (idx != -1) {
                 if (argv[idx+1] == NULL) {
                     printf("file directory absent\n");
+                    if (pipeidx != -1) {
+                        close(pipefd[0]);
+                        close(pipefd[1]);
+                    }
                     _exit(1);
                 }
                 int slot = -1;
@@ -114,30 +139,38 @@ int main() {
                 }
                 if (slot == -1) {
                     perror("open failed");
+                    if (pipeidx != -1) {
+                        close(pipefd[0]);
+                        close(pipefd[1]);
+                    }
                     _exit(1);
                 }
                 if (dup2(slot, 1) == -1) {
                     perror("dup2 failed");
                     close(slot);
+                    if (pipeidx != -1) {
+                        close(pipefd[0]);
+                        close(pipefd[1]);
+                    }
                     _exit(1);
                 }
                 close(slot);
-                close(pipefd[0]);
-                close(pipefd[1]);
                 argv[idx] = NULL;
                 execvp(argv[0], argv);
                 perror("execvp failed");
                 _exit(127);
             }
 
-            if (pipeidx != -1) {
+            if (pipeidx > 0) {
                 close(pipefd[0]);
                 if (argv[pipeidx+1] == NULL) {
                     printf("second command absent\n");
+                    close(pipefd[1]);
                     _exit(1);
                 }
                 if (dup2(pipefd[1], 1) == -1) {
                     perror("dup2 failed");
+                    close(pipefd[1]);
                     _exit(1);
                 }
                 close(pipefd[1]);
@@ -147,23 +180,28 @@ int main() {
                 _exit(127);
             }
 
-            close(pipefd[0]);
-            close(pipefd[1]);
+            if (pipeidx != -1) {
+                close(pipefd[0]);
+                close(pipefd[1]);
+            }
             execvp(argv[0], argv);
             perror("execvp failed");
             _exit(127);
         }
 
-        pid_t pid2 = fork();
-
         if (pipeidx != -1) {
+            pid2 = fork();
             if (pid2 == -1) {
                 perror("fork failed");
-                _exit(1);
+                close(pipefd[0]);
+                close(pipefd[1]);
+                free(line);
+                continue;
             } else if (pid2 == 0) {
                 close(pipefd[1]);
                 if (dup2(pipefd[0], 0) == -1) {
                     perror("dup2 failed");
+                    close(pipefd[0]);
                     _exit(1);
                 }
                 close(pipefd[0]);
@@ -177,10 +215,22 @@ int main() {
         }
 
         if (pid1 > 0) {
-            close(pipefd[0]);
-            close(pipefd[1]);
-            waitpid(pid1, NULL, 0);
-            waitpid(pid2, NULL, 0);
+            if (pipeidx != -1) {
+                close(pipefd[0]);
+                close(pipefd[1]);
+            }
+            if (waitpid(pid1, NULL, 0) == -1) {
+                perror("waitpid failed");
+                free(line);
+                continue;
+            }
+            if (pid2 > 0) {
+                if (waitpid(pid2, NULL, 0) == -1) {
+                    perror("waitpid failed");
+                    free(line);
+                    continue;
+                }
+            }
         }
 
         free(line);
