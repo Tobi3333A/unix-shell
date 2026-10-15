@@ -32,19 +32,24 @@ int main() {
 
         char *argv[64];
 
-        // if (length > 64) {
-        //     printf("command is too long\n");
-        //     free(line);
-        //     continue;
-        // }
-
         char *pointer = strtok(line, " \t");
         int n= 0;
+        int too_many_args = 0;
         argv[n] = pointer;
         while (pointer != NULL) {
+            if (n > 63) {
+                too_many_args = 1;
+                break;
+            }
             n += 1;
             pointer = strtok(NULL, " \t");
             argv[n] = pointer;
+        }
+
+        if (too_many_args) {
+            printf("too many arguments\n");
+            free(line);
+            continue;
         }
 
         if (argv[0] == NULL) {
