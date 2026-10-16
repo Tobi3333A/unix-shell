@@ -246,6 +246,11 @@ int main() {
                 perror("fork failed");
                 close(pipefd[0]);
                 close(pipefd[1]);
+
+                if (waitpid(pid1, NULL, 0) == -1) {
+                    perror("waitpid failed");
+                }
+                
                 free(line);
                 continue;
             } else if (pid2 == 0) {
